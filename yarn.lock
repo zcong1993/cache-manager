@@ -351,6 +351,11 @@
   dependencies:
     "@babel/types" "^7.3.0"
 
+"@types/debug@^4.1.4":
+  version "4.1.4"
+  resolved "https://registry.yarnpkg.com/@types/debug/-/debug-4.1.4.tgz#56eec47706f0fd0b7c694eae2f3172e6b0b769da"
+  integrity sha512-D9MyoQFI7iP5VdpEyPZyjjqIJ8Y8EDNQFIFVLOmeg1rI1xiHOChyUPMPRUVfqFCerxfE+yS3vMyj37F6IdtOoQ==
+
 "@types/ioredis@^4.0.11":
   version "4.0.11"
   resolved "https://registry.yarnpkg.com/@types/ioredis/-/ioredis-4.0.11.tgz#4acf9d7912944bcf1e96dd6adba2f16c07ed9ae7"

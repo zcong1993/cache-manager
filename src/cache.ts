@@ -1,5 +1,9 @@
+import * as debug from 'debug'
+
 import { ICacheBackend, GetterFunc } from './types'
 import { isEmpty } from './utils'
+
+const debugCache = debug('cache')
 
 export class CacheManager {
   private prefix: string
@@ -31,15 +35,22 @@ export class CacheManager {
       const dataStr = await this.cacheBackend.get(cacheKey)
       if (dataStr) {
         if (!json) {
+          debugCache(
+            `string mode, return direct, key: ${key}, cacheKey: ${cacheKey}`,
+            dataStr
+          )
           return dataStr
         }
         try {
           const res = JSON.parse(dataStr)
+          debugCache(`hit cache: key: ${key}, cacheKey: ${cacheKey}`, res)
           return res
         } catch (err) {
           console.warn(`bad json string: ${dataStr}`, err)
         }
       }
+    } else {
+      debugCache(`force get, ignore cache, key: ${key}, cacheKey: ${cacheKey}`)
     }
 
     const data = await this.getterFunc(key)
@@ -56,12 +67,19 @@ export class CacheManager {
           expires || this.defaultExpires
         )
       }
+    } else {
+      debugCache(
+        `empty data, cache ignore, key: ${key}, cacheKey: ${cacheKey}`,
+        data
+      )
     }
 
     return data
   }
 
   async delete(key: string) {
-    await this.cacheBackend.delete(this.prefix + key)
+    const cacheKey = this.prefix + key
+    debugCache(`delete cache, ${key}, cacheKey: ${cacheKey}`)
+    await this.cacheBackend.delete(cacheKey)
   }
 }
