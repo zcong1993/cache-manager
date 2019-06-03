@@ -4,9 +4,9 @@ export interface ICacheBackend {
   delete(key: string): void
 }
 
-export interface Iserializer<T = any, U = string> {
-  encode(data: T): U
-  decode(data: U): T
+export interface Iserializer {
+  encode(data: any): string
+  decode(data: string): any
 }
 
 export type GetterFunc = (key: string) => any

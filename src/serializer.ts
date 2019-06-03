@@ -1,16 +1,16 @@
 import { Iserializer } from './types'
 
-export class JsonSerizlizer<T = any> implements Iserializer<T> {
-  encode(data: T): string {
+export class JsonSerizlizer implements Iserializer {
+  encode(data: any): string {
     return JSON.stringify(data)
   }
 
-  decode(data: string): T {
-    return JSON.parse(data) as T
+  decode(data: string): any {
+    return JSON.parse(data)
   }
 }
 
-export class RawSerializer implements Iserializer<string> {
+export class RawSerializer implements Iserializer {
   encode(data: string): string {
     return data
   }

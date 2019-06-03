@@ -1,48 +1,61 @@
 import * as debug from 'debug'
 
-import { ICacheBackend, GetterFunc } from './types'
-import { isEmpty } from './utils'
+import { ICacheBackend, GetterFunc, Iserializer } from './types'
+import { isEmpty, delay } from './utils'
+import { JsonSerizlizer } from './serializer'
 
 const debugCache = debug('cache')
 
-export class CacheManager {
-  private prefix: string
-  private cacheBackend: ICacheBackend
-  private getterFunc: GetterFunc
-  private defaultExpires: number
+export interface Options {
+  prefix: string
+  cacheBackend: ICacheBackend
+  getterFunc: GetterFunc
+  serializer?: Iserializer
+  defaultExpires?: number
+  singleFlight?: boolean
+  singleFlightWaitTime?: number
+}
 
-  constructor(
-    prefix: string,
-    cacheBackend: ICacheBackend,
-    getterFunc: GetterFunc,
-    defaultExpires: number = 60
-  ) {
-    this.prefix = prefix
-    this.cacheBackend = cacheBackend
-    this.getterFunc = getterFunc
-    this.defaultExpires = defaultExpires
+export class CacheManager {
+  private options: Options
+  private singleFlightKeys: Set<string>
+
+  constructor({
+    prefix,
+    cacheBackend,
+    getterFunc,
+    defaultExpires = 60,
+    singleFlight = true,
+    singleFlightWaitTime = 100,
+    serializer = new JsonSerizlizer()
+  }: Options) {
+    this.options = {
+      prefix,
+      cacheBackend,
+      getterFunc,
+      defaultExpires,
+      singleFlight,
+      singleFlightWaitTime,
+      serializer
+    }
+    this.singleFlightKeys = new Set<string>()
   }
 
   async getWithCache(
     key: string,
-    json: boolean = true,
     expires?: number,
-    force?: boolean
+    force?: boolean,
+    serializer?: Iserializer
   ): Promise<any> {
-    const cacheKey = this.prefix + key
+    const cacheKey = this.options.prefix + key
 
     if (!force) {
-      const dataStr = await this.cacheBackend.get(cacheKey)
+      const dataStr = await this.options.cacheBackend.get(cacheKey)
       if (dataStr) {
-        if (!json) {
-          debugCache(
-            `string mode, return direct, key: ${key}, cacheKey: ${cacheKey}`,
-            dataStr
-          )
-          return dataStr
-        }
         try {
-          const res = JSON.parse(dataStr)
+          const res = serializer
+            ? serializer.decode(dataStr)
+            : this.options.serializer.decode(dataStr)
           debugCache(`hit cache: key: ${key}, cacheKey: ${cacheKey}`, res)
           return res
         } catch (err) {
@@ -53,20 +66,29 @@ export class CacheManager {
       debugCache(`force get, ignore cache, key: ${key}, cacheKey: ${cacheKey}`)
     }
 
-    const data = await this.getterFunc(key)
+    // single flight
+    if (this.options.singleFlight && this.singleFlightKeys.has(cacheKey)) {
+      await delay(this.options.singleFlightWaitTime)
+      debugCache(
+        `trigger single flight: key: ${key}, cacheKey: ${cacheKey}, wait: ${
+          this.options.singleFlightWaitTime
+        }`
+      )
+      return this.getWithCache(key, expires, force)
+    }
+
+    this.options.singleFlight && this.singleFlightKeys.add(cacheKey)
+    const data = await this.options.getterFunc(key)
 
     if (data && !isEmpty(data)) {
-      if (!json && typeof data !== 'string') {
-        console.warn(
-          `non json mode expect string data type but got ${typeof data}`
-        )
-      } else {
-        await this.cacheBackend.set(
-          cacheKey,
-          json ? JSON.stringify(data) : data,
-          expires || this.defaultExpires
-        )
-      }
+      debugCache(`set cache, key: ${key}, cacheKey: ${cacheKey}`, data)
+      await this.options.cacheBackend.set(
+        cacheKey,
+        serializer
+          ? serializer.encode(data)
+          : this.options.serializer.encode(data),
+        expires || this.options.defaultExpires
+      )
     } else {
       debugCache(
         `empty data, cache ignore, key: ${key}, cacheKey: ${cacheKey}`,
@@ -74,12 +96,14 @@ export class CacheManager {
       )
     }
 
+    this.options.singleFlight && this.singleFlightKeys.delete(cacheKey)
+
     return data
   }
 
   async delete(key: string) {
-    const cacheKey = this.prefix + key
+    const cacheKey = this.options.prefix + key
     debugCache(`delete cache, ${key}, cacheKey: ${cacheKey}`)
-    await this.cacheBackend.delete(cacheKey)
+    await this.options.cacheBackend.delete(cacheKey)
   }
 }

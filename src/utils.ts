@@ -17,3 +17,6 @@ export const isEmpty = (d: any): boolean => {
 
   return false
 }
+
+export const delay = (n: number) =>
+  new Promise(resolve => setTimeout(resolve, n))
