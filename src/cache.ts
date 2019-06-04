@@ -14,6 +14,7 @@ export interface Options {
   defaultExpires?: number
   singleFlight?: boolean
   singleFlightWaitTime?: number
+  missingOrEmptyExpires?: number
 }
 
 export class CacheManager {
@@ -27,7 +28,8 @@ export class CacheManager {
     defaultExpires = 60,
     singleFlight = true,
     singleFlightWaitTime = 100,
-    serializer = new JsonSerizlizer()
+    serializer = new JsonSerizlizer(),
+    missingOrEmptyExpires = 0
   }: Options) {
     this.options = {
       prefix,
@@ -36,7 +38,8 @@ export class CacheManager {
       defaultExpires,
       singleFlight,
       singleFlightWaitTime,
-      serializer
+      serializer,
+      missingOrEmptyExpires
     }
     this.singleFlightKeys = new Set<string>()
   }
@@ -90,10 +93,24 @@ export class CacheManager {
         expires || this.options.defaultExpires
       )
     } else {
-      debugCache(
-        `empty data, cache ignore, key: ${key}, cacheKey: ${cacheKey}`,
-        data
-      )
+      if (this.options.missingOrEmptyExpires > 0) {
+        debugCache(
+          `set missing or empty cache, key: ${key}, cacheKey: ${cacheKey}`,
+          data
+        )
+        await this.options.cacheBackend.set(
+          cacheKey,
+          serializer
+            ? serializer.encode(data)
+            : this.options.serializer.encode(data),
+          this.options.missingOrEmptyExpires
+        )
+      } else {
+        debugCache(
+          `empty data, cache ignore, key: ${key}, cacheKey: ${cacheKey}`,
+          data
+        )
+      }
     }
 
     this.options.singleFlight && this.singleFlightKeys.delete(cacheKey)
