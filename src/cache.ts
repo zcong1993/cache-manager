@@ -6,14 +6,50 @@ import { JsonSerizlizer } from './serializer'
 
 const debugCache = debug('cache')
 
+/**
+ * Options is construct params for CacheManager
+ */
 export interface Options {
+  /**
+   * prefix is cache key prefix for this CacheManager group
+   */
   prefix: string
+  /**
+   * cacheBackend is cache backend for CacheManager
+   */
   cacheBackend: ICacheBackend
+  /**
+   * getterFunc is origin data source we wrappered
+   */
   getterFunc: GetterFunc
+  /**
+   * CacheManager use serializer in cache getter and setter,
+   * encode: cache set,
+   * decode: cache get,
+   * default is JSON serializer
+   */
   serializer?: Iserializer
+  /**
+   * defaultExpires is default expires second time for this CacheManager group
+   * default is 60 s
+   */
   defaultExpires?: number
+  /**
+   * singleFlight can protect origin data source be called multi times in a moment,
+   * if enabled, default is true
+   */
   singleFlight?: boolean
+  /**
+   * singleFlightWaitTime is interval timeout for these callers who not access
+   * to the origin data source, only works when singleFlight is enable,
+   * default is 100 ms
+   */
   singleFlightWaitTime?: number
+  /**
+   * if missingOrEmptyExpires > 0 (enabled), CacheManager will cache the non exists or empty data from
+   * origin data source, protected always request non exists data from origin data source,
+   * default is 0 (disable)
+   */
   missingOrEmptyExpires?: number
 }
 
