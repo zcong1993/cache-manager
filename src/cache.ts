@@ -137,6 +137,12 @@ export class CacheManager {
     return this.callAndAddCache(key, cacheKey, expires, serializer)
   }
 
+  async delete(key: string) {
+    const cacheKey = this.options.prefix + key
+    debugCache(`delete cache, ${key}, cacheKey: ${cacheKey}`)
+    await this.options.cacheBackend.delete(cacheKey)
+  }
+
   private async callAndAddCache(
     key: string,
     cacheKey: string,
@@ -176,11 +182,5 @@ export class CacheManager {
     }
 
     return data
-  }
-
-  async delete(key: string) {
-    const cacheKey = this.options.prefix + key
-    debugCache(`delete cache, ${key}, cacheKey: ${cacheKey}`)
-    await this.options.cacheBackend.delete(cacheKey)
   }
 }
