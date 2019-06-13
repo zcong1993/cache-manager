@@ -40,12 +40,6 @@ export interface Options {
    */
   singleFlight?: boolean
   /**
-   * singleFlightWaitTime is interval timeout for these callers who not access
-   * to the origin data source, only works when singleFlight is enable,
-   * default is 100 ms
-   */
-  singleFlightWaitTime?: number
-  /**
    * if missingOrEmptyExpires > 0 (enabled), CacheManager will cache the non exists or empty data from
    * origin data source, protected always request non exists data from origin data source,
    * default is 0 (disable)
@@ -55,7 +49,7 @@ export interface Options {
 
 export class CacheManager {
   private options: Options
-  private singleFlightKeys: Set<string>
+  private singleFlightQueue: Map<string, ((res: any) => void)[]>
 
   constructor({
     prefix,
@@ -63,7 +57,6 @@ export class CacheManager {
     getterFunc,
     defaultExpires = 60,
     singleFlight = true,
-    singleFlightWaitTime = 100,
     serializer = new JsonSerizlizer(),
     missingOrEmptyExpires = 0
   }: Options) {
@@ -73,11 +66,10 @@ export class CacheManager {
       getterFunc,
       defaultExpires,
       singleFlight,
-      singleFlightWaitTime,
       serializer,
       missingOrEmptyExpires
     }
-    this.singleFlightKeys = new Set<string>()
+    this.singleFlightQueue = new Map<string, ((res: any) => void)[]>()
   }
 
   async getWithCache(
@@ -106,19 +98,53 @@ export class CacheManager {
     }
 
     // single flight
-    if (this.options.singleFlight && this.singleFlightKeys.has(cacheKey)) {
-      await delay(this.options.singleFlightWaitTime)
-      debugCache(
-        `trigger single flight: key: ${key}, cacheKey: ${cacheKey}, wait: ${
-          this.options.singleFlightWaitTime
-        }`
-      )
-      return this.getWithCache(key, expires, force)
+    if (this.options.singleFlight) {
+      const promise = new Promise(resolve => {
+        const queue: ((res: any) => void)[] = this.singleFlightQueue.has(
+          cacheKey
+        )
+          ? this.singleFlightQueue.get(cacheKey)
+          : []
+        queue.push(resolve)
+        debugCache(
+          `singleFlight add request to queue, key: ${key}, cacheKey: ${cacheKey}`
+        )
+        this.singleFlightQueue.set(cacheKey, queue)
+        if (queue.length === 1) {
+          debugCache(
+            `singleFlight get data from source, key: ${key}, cacheKey: ${cacheKey}`
+          )
+          this.callAndAddCache(key, cacheKey, expires, serializer).then(res => {
+            debugCache(
+              `singleFlight got data, resolve all promises, key: ${key}, cacheKey: ${cacheKey}`
+            )
+            this.singleFlightQueue
+              .get(cacheKey)
+              .forEach(resolve => resolve(res))
+            this.singleFlightQueue.delete(cacheKey)
+            debugCache(
+              `singleFlight delete promise queue, key: ${key}, cacheKey: ${cacheKey}, mapSize: ${
+                this.singleFlightQueue.size
+              }`
+            )
+          })
+        }
+      })
+
+      return promise
     }
 
-    this.options.singleFlight && this.singleFlightKeys.add(cacheKey)
-    const data = await this.options.getterFunc(key)
+    return this.callAndAddCache(key, cacheKey, expires, serializer)
+  }
 
+  private async callAndAddCache(
+    key: string,
+    cacheKey: string,
+    expires?: number,
+    serializer?: Iserializer
+  ) {
+    const data = await this.options.getterFunc(key)
+    debugCache(`get data from data source, key: ${key}, cacheKey: ${cacheKey}`)
     if (data && !isEmpty(data)) {
       debugCache(`set cache, key: ${key}, cacheKey: ${cacheKey}`, data)
       await this.options.cacheBackend.set(
@@ -148,8 +174,6 @@ export class CacheManager {
         )
       }
     }
-
-    this.options.singleFlight && this.singleFlightKeys.delete(cacheKey)
 
     return data
   }
