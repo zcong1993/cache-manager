@@ -20,8 +20,8 @@ jobs:
           paths:
             - ./node_modules
       - run:
-        name: wait for redis
-        command: dockerize -wait tcp://localhost:6379 -timeout 1m
+          name: wait for redis
+          command: dockerize -wait tcp://localhost:6379 -timeout 1m
       - run:
           name: test
           command: yarn test:cov
