@@ -1,7 +1,7 @@
 import * as debug from 'debug'
 
 import { ICacheBackend, GetterFunc, Iserializer } from './types'
-import { isEmpty, delay } from './utils'
+import { isEmpty } from './utils'
 import { JsonSerizlizer } from './serializer'
 
 const debugCache = debug('cache')
