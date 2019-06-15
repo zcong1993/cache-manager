@@ -6,7 +6,7 @@ import { delay } from '../src/utils'
 const redis = new Redis()
 
 afterEach(async () => {
-  redis.flushdb()
+  await redis.flushdb()
 })
 
 it('should work well', async () => {
