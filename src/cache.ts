@@ -158,9 +158,7 @@ export class CacheManager {
               `singleFlight got data, resolve all promises, key: ${key}, cacheKey: ${cacheKey}`
             )
             const resolves = this.singleFlightQueue.get(cacheKey)
-            resolves.forEach(resolve => {
-              resolve(res)
-            })
+            resolves.forEach(resolve => resolve(res))
             this.internalStats.hits += resolves.length - 1
             this.singleFlightQueue.delete(cacheKey)
             this.internalStats.queueMapSize = this.singleFlightQueue.size
