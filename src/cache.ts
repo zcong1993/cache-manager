@@ -66,9 +66,16 @@ export interface GetterOptions {
   missingOrEmptyExpires?: number
 }
 
+export interface Stats {
+  hits: number
+  misses: number
+  queueMapSize: number
+}
+
 export class CacheManager {
   private options: Options
   private singleFlightQueue: Map<string, ((res: any) => void)[]>
+  private internalStats: Stats = { hits: 0, misses: 0, queueMapSize: 0 }
 
   constructor({
     cacheBackend,
@@ -111,6 +118,7 @@ export class CacheManager {
         try {
           const res = opts.serializer.decode(dataStr)
           debugCache(`hit cache: key: ${key}, cacheKey: ${cacheKey}`, res)
+          this.internalStats.hits += 1
           return res
         } catch (err) {
           console.warn(`bad json string: ${dataStr}`, err)
@@ -128,6 +136,8 @@ export class CacheManager {
         )
           ? this.singleFlightQueue.get(cacheKey)
           : []
+
+        this.internalStats.queueMapSize = this.singleFlightQueue.size
         queue.push(resolve)
         debugCache(
           `singleFlight add request to queue, key: ${key}, cacheKey: ${cacheKey}`
@@ -147,10 +157,13 @@ export class CacheManager {
             debugCache(
               `singleFlight got data, resolve all promises, key: ${key}, cacheKey: ${cacheKey}`
             )
-            this.singleFlightQueue
-              .get(cacheKey)
-              .forEach(resolve => resolve(res))
+            const resolves = this.singleFlightQueue.get(cacheKey)
+            resolves.forEach(resolve => {
+              resolve(res)
+            })
+            this.internalStats.hits += resolves.length - 1
             this.singleFlightQueue.delete(cacheKey)
+            this.internalStats.queueMapSize = this.singleFlightQueue.size
             debugCache(
               `singleFlight delete promise queue, key: ${key}, cacheKey: ${cacheKey}, mapSize: ${
                 this.singleFlightQueue.size
@@ -178,6 +191,10 @@ export class CacheManager {
     await this.options.cacheBackend.delete(cacheKey)
   }
 
+  get stats(): Stats {
+    return this.internalStats
+  }
+
   private async callAndAddCache<T = any>(
     key: string,
     cacheKey: string,
@@ -187,6 +204,7 @@ export class CacheManager {
   ): Promise<T> {
     const data = await getterFunc(key)
     debugCache(`get data from data source, key: ${key}, cacheKey: ${cacheKey}`)
+    this.internalStats.misses += 1
     if (data && !isEmpty(data)) {
       debugCache(`set cache, key: ${key}, cacheKey: ${cacheKey}`, data)
       await this.options.cacheBackend.set(

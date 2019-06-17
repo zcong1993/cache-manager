@@ -31,6 +31,7 @@ it('should work well', async () => {
 
   expect(await redis.get(`${prefix}:${key}`)).not.toBeNull()
   expect(mockFn).toBeCalledTimes(1)
+  expect(cm.stats).toEqual({ hits: 9, misses: 1, queueMapSize: 0 })
 
   // expired
   await delay(1000)
@@ -43,11 +44,13 @@ it('should work well', async () => {
 
   expect(await redis.get(`${prefix}:${key}`)).not.toBeNull()
   expect(mockFn).toBeCalledTimes(2)
+  expect(cm.stats).toEqual({ hits: 18, misses: 2, queueMapSize: 0 })
 
   // force
   const val = await cm.getWithCache(key, { ...getterOpts, force: true })
   expect(val).toEqual(data)
   expect(mockFn).toBeCalledTimes(3)
+  expect(cm.stats).toEqual({ hits: 18, misses: 3, queueMapSize: 0 })
 
   await delay(1000)
 
@@ -62,6 +65,7 @@ it('should work well', async () => {
       })
   )
   expect(mockFn).toBeCalledTimes(13)
+  expect(cm.stats).toEqual({ hits: 18, misses: 13, queueMapSize: 0 })
 })
 
 it('singleflight should work well', async () => {
@@ -89,4 +93,6 @@ it('singleflight should work well', async () => {
       })
   )
   expect(mockFn).toBeCalledTimes(1)
+  // singlefilght and no OOM
+  expect(cm.stats).toEqual({ hits: 9, misses: 1, queueMapSize: 0 })
 })
