@@ -10,24 +10,26 @@ afterEach(async () => {
 })
 
 it('should work well', async () => {
-  const prefix = '__TEST'
+  const prefix = 'TEST'
   const key = 'test'
   const data = { name: 'test' }
   const mockFn = jest.fn().mockResolvedValue(data)
   const cm = new CacheManager({
-    prefix,
-    cacheBackend: new RedisBackend(),
-    defaultExpires: 1,
-    singleFlight: false,
-    getterFunc: mockFn
+    cacheBackend: new RedisBackend(redis),
+    defaultExpires: 1
   })
 
+  const getterOpts = {
+    prefix,
+    getterFunc: mockFn
+  }
+
   for (let i = 0; i < 10; i++) {
-    const val = await cm.getWithCache(key)
+    const val = await cm.getWithCache(key, getterOpts)
     expect(val).toEqual(data)
   }
 
-  expect(await redis.get(prefix + key)).not.toBeNull()
+  expect(await redis.get(`${prefix}:${key}`)).not.toBeNull()
   expect(mockFn).toBeCalledTimes(1)
 
   // expired
@@ -35,15 +37,15 @@ it('should work well', async () => {
 
   expect(await redis.get(prefix + key)).toBeNull()
   for (let i = 0; i < 10; i++) {
-    const val = await cm.getWithCache(key)
+    const val = await cm.getWithCache(key, getterOpts)
     expect(val).toEqual(data)
   }
 
-  expect(await redis.get(prefix + key)).not.toBeNull()
+  expect(await redis.get(`${prefix}:${key}`)).not.toBeNull()
   expect(mockFn).toBeCalledTimes(2)
 
   // force
-  const val = await cm.getWithCache(key, 1, true)
+  const val = await cm.getWithCache(key, { ...getterOpts, force: true })
   expect(val).toEqual(data)
   expect(mockFn).toBeCalledTimes(3)
 
@@ -54,23 +56,22 @@ it('should work well', async () => {
     Array(10)
       .fill(null)
       .map(_ => {
-        return cm.getWithCache(key).then(val => expect(val).toEqual(data))
+        return cm
+          .getWithCache(key, getterOpts)
+          .then(val => expect(val).toEqual(data))
       })
   )
   expect(mockFn).toBeCalledTimes(13)
 })
 
 it('singleflight should work well', async () => {
-  const prefix = '__TEST'
+  const prefix = 'TEST:'
   const key = 'test'
   const data = { name: 'test' }
   const mockFn = jest.fn().mockResolvedValue(data)
   const cm = new CacheManager({
-    prefix,
-    cacheBackend: new RedisBackend(),
-    defaultExpires: 1,
-    singleFlight: true,
-    getterFunc: mockFn
+    cacheBackend: new RedisBackend(redis),
+    defaultExpires: 1
   })
 
   // singleflight true
@@ -78,7 +79,13 @@ it('singleflight should work well', async () => {
     Array(10)
       .fill(null)
       .map(_ => {
-        return cm.getWithCache(key).then(val => expect(val).toEqual(data))
+        return cm
+          .getWithCache(key, {
+            prefix,
+            getterFunc: mockFn,
+            singleFlight: true
+          })
+          .then(val => expect(val).toEqual(data))
       })
   )
   expect(mockFn).toBeCalledTimes(1)

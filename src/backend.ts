@@ -3,8 +3,8 @@ import { ICacheBackend } from './types'
 
 export class RedisBackend implements ICacheBackend {
   private redis: IORedis.Redis
-  constructor(options?: IORedis.RedisOptions) {
-    this.redis = new IORedis(options)
+  constructor(redis: IORedis.Redis) {
+    this.redis = redis
   }
 
   async set(key: string, data: string, expire: number) {

@@ -11,17 +11,9 @@ const debugCache = debug('cache')
  */
 export interface Options {
   /**
-   * prefix is cache key prefix for this CacheManager group
-   */
-  prefix: string
-  /**
    * cacheBackend is cache backend for CacheManager
    */
   cacheBackend: ICacheBackend
-  /**
-   * getterFunc is origin data source we wrappered
-   */
-  getterFunc: GetterFunc
   /**
    * CacheManager use serializer in cache getter and setter,
    * encode: cache set,
@@ -35,15 +27,42 @@ export interface Options {
    */
   defaultExpires?: number
   /**
+   * if missingOrEmptyExpires > 0 (enabled), CacheManager will cache the non exists or empty data from
+   * origin data source, protected always request non exists data from origin data source,
+   * default is 0 (disable)
+   */
+  missingOrEmptyExpires?: number
+}
+
+export interface GetterOptions {
+  /**
+   * prefix is cache key prefix for this CacheManager group
+   */
+  prefix: string
+  /**
+   * getterFunc is origin data source we wrappered
+   */
+  getterFunc: GetterFunc
+  /**
+   * if force get data from backend
+   */
+  force?: boolean
+  /**
+   * cache expires in second
+   */
+  expires?: number
+  /**
    * singleFlight can protect origin data source be called multi times in a moment,
    * if enabled, default is true
    */
   singleFlight?: boolean
   /**
-   * if missingOrEmptyExpires > 0 (enabled), CacheManager will cache the non exists or empty data from
-   * origin data source, protected always request non exists data from origin data source,
-   * default is 0 (disable)
+   * CacheManager use serializer in cache getter and setter,
+   * encode: cache set,
+   * decode: cache get,
+   * default is JSON serializer
    */
+  serializer?: Iserializer
   missingOrEmptyExpires?: number
 }
 
@@ -52,41 +71,45 @@ export class CacheManager {
   private singleFlightQueue: Map<string, ((res: any) => void)[]>
 
   constructor({
-    prefix,
     cacheBackend,
-    getterFunc,
     defaultExpires = 60,
-    singleFlight = true,
     serializer = new JsonSerizlizer(),
     missingOrEmptyExpires = 0
   }: Options) {
     this.options = {
-      prefix,
       cacheBackend,
-      getterFunc,
       defaultExpires,
-      singleFlight,
       serializer,
       missingOrEmptyExpires
     }
     this.singleFlightQueue = new Map<string, ((res: any) => void)[]>()
   }
 
-  async getWithCache(
-    key: string,
-    expires?: number,
-    force?: boolean,
-    serializer?: Iserializer
-  ): Promise<any> {
-    const cacheKey = this.options.prefix + key
+  async getWithCache<T = any>(key: string, options: GetterOptions): Promise<T> {
+    const opts = {
+      ...this.options,
+      ...options
+    }
 
-    if (!force) {
+    if (!opts.force) {
+      opts.force = false
+    }
+
+    if (!opts.singleFlight) {
+      opts.singleFlight = false
+    }
+
+    if (!opts.defaultExpires && !opts.expires) {
+      throw new Error('no expires')
+    }
+
+    const cacheKey = `${opts.prefix}:${key}`
+
+    if (!opts.force) {
       const dataStr = await this.options.cacheBackend.get(cacheKey)
       if (dataStr) {
         try {
-          const res = serializer
-            ? serializer.decode(dataStr)
-            : this.options.serializer.decode(dataStr)
+          const res = opts.serializer.decode(dataStr)
           debugCache(`hit cache: key: ${key}, cacheKey: ${cacheKey}`, res)
           return res
         } catch (err) {
@@ -98,7 +121,7 @@ export class CacheManager {
     }
 
     // single flight
-    if (this.options.singleFlight) {
+    if (opts.singleFlight) {
       const promise = new Promise(resolve => {
         const queue: ((res: any) => void)[] = this.singleFlightQueue.has(
           cacheKey
@@ -114,7 +137,13 @@ export class CacheManager {
           debugCache(
             `singleFlight get data from source, key: ${key}, cacheKey: ${cacheKey}`
           )
-          this.callAndAddCache(key, cacheKey, expires, serializer).then(res => {
+          this.callAndAddCache(
+            key,
+            cacheKey,
+            opts.getterFunc,
+            opts.expires || opts.defaultExpires,
+            opts.serializer
+          ).then(res => {
             debugCache(
               `singleFlight got data, resolve all promises, key: ${key}, cacheKey: ${cacheKey}`
             )
@@ -131,25 +160,32 @@ export class CacheManager {
         }
       })
 
-      return promise
+      return promise as Promise<T>
     }
 
-    return this.callAndAddCache(key, cacheKey, expires, serializer)
+    return this.callAndAddCache<T>(
+      key,
+      cacheKey,
+      opts.getterFunc,
+      opts.expires || opts.defaultExpires,
+      opts.serializer
+    )
   }
 
-  async delete(key: string) {
-    const cacheKey = this.options.prefix + key
+  async delete(key: string, prefix: string) {
+    const cacheKey = `${prefix}:${key}`
     debugCache(`delete cache, ${key}, cacheKey: ${cacheKey}`)
     await this.options.cacheBackend.delete(cacheKey)
   }
 
-  private async callAndAddCache(
+  private async callAndAddCache<T = any>(
     key: string,
     cacheKey: string,
+    getterFunc: GetterFunc,
     expires?: number,
     serializer?: Iserializer
-  ) {
-    const data = await this.options.getterFunc(key)
+  ): Promise<T> {
+    const data = await getterFunc(key)
     debugCache(`get data from data source, key: ${key}, cacheKey: ${cacheKey}`)
     if (data && !isEmpty(data)) {
       debugCache(`set cache, key: ${key}, cacheKey: ${cacheKey}`, data)
@@ -181,6 +217,6 @@ export class CacheManager {
       }
     }
 
-    return data
+    return data as Promise<T>
   }
 }
