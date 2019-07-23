@@ -6,6 +6,13 @@ import { JsonSerizlizer } from './serializer'
 
 const debugCache = debug('cache')
 
+export type ResolveFn = (res: any) => void
+
+export interface Call {
+  resolveFns: ResolveFn[]
+  rejectFns: ResolveFn[]
+}
+
 /**
  * Options is construct params for CacheManager
  */
@@ -70,12 +77,18 @@ export interface Stats {
   hits: number
   misses: number
   queueMapSize: number
+  errors: number
 }
 
 export class CacheManager {
   private options: Options
-  private singleFlightQueue: Map<string, ((res: any) => void)[]>
-  private internalStats: Stats = { hits: 0, misses: 0, queueMapSize: 0 }
+  private singleFlightQueue = new Map<string, Call>()
+  private internalStats: Stats = {
+    hits: 0,
+    misses: 0,
+    queueMapSize: 0,
+    errors: 0
+  }
 
   constructor({
     cacheBackend,
@@ -89,7 +102,6 @@ export class CacheManager {
       serializer,
       missingOrEmptyExpires
     }
-    this.singleFlightQueue = new Map<string, ((res: any) => void)[]>()
   }
 
   async getWithCache<T = any>(key: string, options: GetterOptions): Promise<T> {
@@ -130,20 +142,20 @@ export class CacheManager {
 
     // single flight
     if (opts.singleFlight) {
-      const promise = new Promise(resolve => {
-        const queue: ((res: any) => void)[] = this.singleFlightQueue.has(
-          cacheKey
-        )
-          ? this.singleFlightQueue.get(cacheKey)
-          : []
+      const promise = new Promise((resolve, reject) => {
+        const call: Call = this.singleFlightQueue.get(cacheKey) || {
+          resolveFns: [],
+          rejectFns: []
+        }
 
         this.internalStats.queueMapSize = this.singleFlightQueue.size
-        queue.push(resolve)
+        call.resolveFns.push(resolve)
+        call.rejectFns.push(reject)
         debugCache(
           `singleFlight add request to queue, key: ${key}, cacheKey: ${cacheKey}`
         )
-        this.singleFlightQueue.set(cacheKey, queue)
-        if (queue.length === 1) {
+        this.singleFlightQueue.set(cacheKey, call)
+        if (call.resolveFns.length === 1) {
           debugCache(
             `singleFlight get data from source, key: ${key}, cacheKey: ${cacheKey}`
           )
@@ -153,21 +165,39 @@ export class CacheManager {
             opts.getterFunc,
             opts.expires || opts.defaultExpires,
             opts.serializer
-          ).then(res => {
-            debugCache(
-              `singleFlight got data, resolve all promises, key: ${key}, cacheKey: ${cacheKey}`
-            )
-            const resolves = this.singleFlightQueue.get(cacheKey)
-            resolves.forEach(resolve => resolve(res))
-            this.internalStats.hits += resolves.length - 1
-            this.singleFlightQueue.delete(cacheKey)
-            this.internalStats.queueMapSize = this.singleFlightQueue.size
-            debugCache(
-              `singleFlight delete promise queue, key: ${key}, cacheKey: ${cacheKey}, mapSize: ${
-                this.singleFlightQueue.size
-              }`
-            )
-          })
+          )
+            .then(res => {
+              debugCache(
+                `singleFlight got data, resolve all promises, key: ${key}, cacheKey: ${cacheKey}`
+              )
+              const waitCall = this.singleFlightQueue.get(cacheKey)
+              waitCall.resolveFns.forEach(resolve => resolve(res))
+              this.internalStats.hits += waitCall.resolveFns.length - 1
+              this.singleFlightQueue.delete(cacheKey)
+              this.internalStats.queueMapSize = this.singleFlightQueue.size
+              debugCache(
+                `singleFlight delete promise queue, key: ${key}, cacheKey: ${cacheKey}, mapSize: ${
+                  this.singleFlightQueue.size
+                }`
+              )
+            })
+            .catch(err => {
+              debugCache(
+                `singleFlight got error, reject all promises, key: ${key}, cacheKey: ${cacheKey}, error: ${
+                  err.message
+                }`
+              )
+              const waitCall = this.singleFlightQueue.get(cacheKey)
+              waitCall.rejectFns.forEach(reject => reject(err))
+              this.internalStats.errors += waitCall.rejectFns.length
+              this.singleFlightQueue.delete(cacheKey)
+              this.internalStats.queueMapSize = this.singleFlightQueue.size
+              debugCache(
+                `singleFlight delete promise queue, key: ${key}, cacheKey: ${cacheKey}, mapSize: ${
+                  this.singleFlightQueue.size
+                }`
+              )
+            })
         }
       })
 
@@ -180,7 +210,13 @@ export class CacheManager {
       opts.getterFunc,
       opts.expires || opts.defaultExpires,
       opts.serializer
-    )
+    ).catch(err => {
+      debugCache(
+        `got error, key: ${key}, cacheKey: ${cacheKey}, error: ${err.message}`
+      )
+      this.internalStats.errors += 1
+      throw err
+    })
   }
 
   async delete(key: string, prefix: string) {
