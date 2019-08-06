@@ -240,7 +240,11 @@ export class CacheManager {
     debugCache(`get data from data source, key: ${key}, cacheKey: ${cacheKey}`)
     this.internalStats.misses += 1
     if (data && !isEmpty(data)) {
-      debugCache(`set cache, key: ${key}, cacheKey: ${cacheKey}`, data)
+      debugCache(
+        `set cache, key: ${key}, cacheKey: ${cacheKey}, expire: ${expires ||
+          this.options.defaultExpires}`,
+        data
+      )
       await this.options.cacheBackend.set(
         cacheKey,
         serializer
