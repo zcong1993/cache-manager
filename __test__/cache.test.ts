@@ -16,7 +16,7 @@ it('should work well', async () => {
   const mockFn = jest.fn().mockResolvedValue(data)
   const cm = new CacheManager({
     cacheBackend: new RedisBackend(redis),
-    defaultExpires: 1
+    expires: 1
   })
 
   const getterOpts = {
@@ -75,7 +75,7 @@ it('singleflight should work well', async () => {
   const mockFn = jest.fn().mockResolvedValue(data)
   const cm = new CacheManager({
     cacheBackend: new RedisBackend(redis),
-    defaultExpires: 1
+    expires: 1
   })
 
   // singleflight true
@@ -109,7 +109,7 @@ it('throw error should work well', async () => {
   }
   const cm = new CacheManager({
     cacheBackend: new RedisBackend(redis),
-    defaultExpires: 1
+    expires: 1
   })
 
   // singleflight true
@@ -144,7 +144,7 @@ it('throw error without singleflight should work well', async () => {
   }
   const cm = new CacheManager({
     cacheBackend: new RedisBackend(redis),
-    defaultExpires: 1
+    expires: 1
   })
 
   // singleflight true

@@ -9,4 +9,4 @@ export interface Iserializer {
   decode(data: string): any
 }
 
-export type GetterFunc = (key: string) => any
+export type GetterFunc<T = any> = (key: string) => T | Promise<T>

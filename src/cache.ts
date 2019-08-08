@@ -29,10 +29,10 @@ export interface Options {
    */
   serializer?: Iserializer
   /**
-   * defaultExpires is default expires second time for this CacheManager group
+   * expires is default expires second time for this CacheManager group
    * default is 60 s
    */
-  defaultExpires?: number
+  expires?: number
   /**
    * if missingOrEmptyExpires > 0 (enabled), CacheManager will cache the non exists or empty data from
    * origin data source, protected always request non exists data from origin data source,
@@ -41,7 +41,7 @@ export interface Options {
   missingOrEmptyExpires?: number
 }
 
-export interface GetterOptions {
+export interface GetterOptions<T = any> {
   /**
    * prefix is cache key prefix for this CacheManager group
    */
@@ -49,7 +49,7 @@ export interface GetterOptions {
   /**
    * getterFunc is origin data source we wrappered
    */
-  getterFunc: GetterFunc
+  getterFunc: GetterFunc<T>
   /**
    * if force get data from backend
    */
@@ -92,13 +92,13 @@ export class CacheManager {
 
   constructor({
     cacheBackend,
-    defaultExpires = 60,
+    expires = 60,
     serializer = new JsonSerizlizer(),
     missingOrEmptyExpires = 0
   }: Options) {
     this.options = {
       cacheBackend,
-      defaultExpires,
+      expires,
       serializer,
       missingOrEmptyExpires
     }
@@ -118,7 +118,7 @@ export class CacheManager {
       opts.singleFlight = false
     }
 
-    if (!opts.defaultExpires && !opts.expires) {
+    if (!opts.expires) {
       throw new Error('no expires')
     }
 
@@ -159,13 +159,7 @@ export class CacheManager {
           debugCache(
             `singleFlight get data from source, key: ${key}, cacheKey: ${cacheKey}`
           )
-          this.callAndAddCache(
-            key,
-            cacheKey,
-            opts.getterFunc,
-            opts.expires || opts.defaultExpires,
-            opts.serializer
-          )
+          this.callAndAddCache(key, cacheKey, opts)
             .then(res => {
               debugCache(
                 `singleFlight got data, resolve all promises, key: ${key}, cacheKey: ${cacheKey}`
@@ -204,13 +198,7 @@ export class CacheManager {
       return promise as Promise<T>
     }
 
-    return this.callAndAddCache<T>(
-      key,
-      cacheKey,
-      opts.getterFunc,
-      opts.expires || opts.defaultExpires,
-      opts.serializer
-    ).catch(err => {
+    return this.callAndAddCache<T>(key, cacheKey, opts).catch(err => {
       debugCache(
         `got error, key: ${key}, cacheKey: ${cacheKey}, error: ${err.message}`
       )
@@ -232,38 +220,33 @@ export class CacheManager {
   private async callAndAddCache<T = any>(
     key: string,
     cacheKey: string,
-    getterFunc: GetterFunc,
-    expires?: number,
-    serializer?: Iserializer
+    opt: GetterOptions<T>
   ): Promise<T> {
-    const data = await getterFunc(key)
+    const data = await opt.getterFunc(key)
     debugCache(`get data from data source, key: ${key}, cacheKey: ${cacheKey}`)
     this.internalStats.misses += 1
     if (data && !isEmpty(data)) {
       debugCache(
-        `set cache, key: ${key}, cacheKey: ${cacheKey}, expire: ${expires ||
-          this.options.defaultExpires}`,
+        `set cache, key: ${key}, cacheKey: ${cacheKey}, expire: ${opt.expires}`,
         data
       )
       await this.options.cacheBackend.set(
         cacheKey,
-        serializer
-          ? serializer.encode(data)
-          : this.options.serializer.encode(data),
-        expires || this.options.defaultExpires
+        opt.serializer.encode(data),
+        opt.expires
       )
     } else {
-      if (this.options.missingOrEmptyExpires > 0) {
+      if (opt.missingOrEmptyExpires > 0) {
         debugCache(
-          `set missing or empty cache, key: ${key}, cacheKey: ${cacheKey}`,
+          `set missing or empty cache, key: ${key}, cacheKey: ${cacheKey}, expire: ${
+            opt.missingOrEmptyExpires
+          }`,
           data
         )
         await this.options.cacheBackend.set(
           cacheKey,
-          serializer
-            ? serializer.encode(data)
-            : this.options.serializer.encode(data),
-          this.options.missingOrEmptyExpires
+          opt.serializer.encode(data),
+          opt.missingOrEmptyExpires
         )
       } else {
         debugCache(
@@ -273,6 +256,6 @@ export class CacheManager {
       }
     }
 
-    return data as Promise<T>
+    return data
   }
 }
